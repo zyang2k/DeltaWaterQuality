@@ -126,7 +126,6 @@ regional_comparison <- dt1_filtered %>%
     x = "Region"
   )
 
-
 # Save regional comparison plot
 ggsave("regional_comparison_boxplot.png", regional_comparison, width = 16, height = 12)
 
