@@ -530,6 +530,6 @@ summary(as.factor(dt3$Description))
 detach(dt3)               
 
 
-
+stations <- read.csv("dwq_stations.csv")
 
 
