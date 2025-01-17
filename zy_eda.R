@@ -125,6 +125,7 @@ regional_comparison <- dt1_filtered %>%
     y = "Value",
     x = "Region"
   )
+<<<<<<< HEAD
 
 # Save regional comparison plot
 ggsave("regional_comparison_boxplot.png", regional_comparison, width = 16, height = 12)
@@ -135,3 +136,5 @@ print("Files generated:")
 print("1. regional_trends_summary.csv - Detailed summary statistics")
 print(paste("2. *_regional_trends.png - Time series plots for each parameter"))
 print("3. regional_comparison_boxplot.png - Boxplots comparing parameters across regions")
+=======
+>>>>>>> e97c8f681cd0284cac53b57889702be272983b53
