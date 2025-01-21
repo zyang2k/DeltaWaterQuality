@@ -93,7 +93,7 @@ regional_trends <- dt1_filtered %>%
 # Save regional trends summary
 write.csv(regional_trends, "regional_trends_summary.csv", row.names = FALSE)
 
-###FPCA
+###FPCA ############
 # Function to create fpca for a parameter ############
 create_fpca_obj <- function(data, parameter) {
   # Prepare data for creating fpca objects
@@ -168,20 +168,217 @@ create_fpca_obj <- function(data, parameter) {
     
     y <- append(y, valid_means)
   }
-  return(list(id = id, time = time, y = y))
+  return(list(id = id, time = time, y = y, full_time_grid=full_time_grid))
 }
 
-# test: perform PACE ##########
-fpca_obj <- create_fpca_obj(regional_trends, variables_of_interest[2])
-L3 <- MakeFPCAInputs(IDs = fpca_obj$id, tVec = fpca_obj$time, fpca_obj$y)
-optns <- list(plot = TRUE, dataType = 'Sparse', usergrid = TRUE, methodXi = 'CE')
-fit <- FPCA(L3$Ly, L3$Lt, optns = optns)
 
-require('ks')
-CreatePathPlot(fit, subset = c(1:4), main = 'K = 2', pch = 4); grid()
-CreateOutliersPlot(fit, optns = list(K = 2, variant = 'KDE'))
-CreateModeOfVarPlot(fit, k = 1, rainbowPlot = FALSE)
-CreateFuncBoxPlot(fit, xlab = 'Time', ylab = 'Chemical Desity', 
-                  optns = list(K =2, variant='pointwise'))
+# function to customize x ticks for the path plots and the funcbox plots in FPCA ###########
+custom_xticks <- function(full_time_grid, original_x_ticks){
+  seasons <- c("Q1", "Q2", "Q3", "Q4")
+  flag <- 0 # if adding TimeIndex = 0 in the full_time_grid then turns to 1
+  if (tail(original_x_ticks,1)[[1]] > max(full_time_grid$TimeIndex)){
+    # Determine the maximum TimeIndex and corresponding Year and Season
+    max_time_index <- max(full_time_grid$TimeIndex)
+    last_year <- tail(full_time_grid$Year, 1)
+    last_season <- tail(full_time_grid$Season, 1)
+    
+    # Generate new entries for full_time_grid
+    new_entries <- data.frame(Year = integer(0), Season = character(0), TimeIndex = numeric(0))
+    
+    # Start from the next season
+    
+    season_idx <- match(last_season, seasons)
+    year <- last_year
+    
+    for (time_idx in (max_time_index + 1):tail(original_x_ticks, 1)[[1]]) {
+      # Determine the next season
+      season_idx <- season_idx + 1
+      if (season_idx > 4) {
+        season_idx <- 1
+        year <- year + 1
+      }
+      
+      # Add the new entry
+      new_entries <- rbind(new_entries, data.frame(
+        Year = year,
+        Season = seasons[season_idx],
+        TimeIndex = time_idx
+      ))
+    }
+    
+    # Combine the old and new full_time_grid
+    full_time_grid <- rbind(full_time_grid, new_entries)
+  }
+  
+  # Determine the minimum TimeIndex and corresponding Year and Season
+  if (original_x_ticks[1] == 0) {
+    flag <- 1
+    first_season = full_time_grid$Season[1]
+    first_year = full_time_grid$Year[1]
+    season_idx <- match(first_season, seasons)
+    year = first_year
+    
+    season_idx <- season_idx - 1
+    if (season_idx == 0) {
+      season_idx <- 4
+      year <- year - 1
+    }
+    
+    new_entries <- data.frame(Year = year, Season = seasons[season_idx],
+                              TimeIndex = 0)
+    
+    full_time_grid <- rbind(new_entries, full_time_grid)
+  }
+  
+  if (flag == 1){formatted_ticks <- paste(full_time_grid$Year[original_x_ticks + 1], 
+                                          full_time_grid$Season[original_x_ticks + 1])}
+  else{
+    formatted_ticks <- paste(full_time_grid$Year[original_x_ticks], 
+                             full_time_grid$Season[original_x_ticks])
+  }
+  return(formatted_ticks)
+}
+
 
 # perform PACE on all variables in `variables_of_interest` ############
+# produce plots into file: 8stations_fpca ###########
+output_folder <- "C:/Users/20878/260Project-Water Quality/dataset/WaterQualityEDA/8stations_fpca"
+for (var in variables_of_interest){
+  fpca_obj <- create_fpca_obj(regional_trends, var)
+  L3 <- MakeFPCAInputs(IDs = fpca_obj$id, tVec = fpca_obj$time, fpca_obj$y)
+  optns <- list(dataType = 'Sparse', usergrid = TRUE, methodXi = 'CE')
+  fit <- FPCA(L3$Ly, L3$Lt, optns = optns)
+  full_time_grid = fpca_obj$full_time_grid
+  
+  
+  # 1_fpca_plot
+  pic_nm = paste0("1_fpca_plot_", var, ".png")
+  full_path = file.path(output_folder, pic_nm)
+  png(full_path, width = 800, height = 600)
+  plot(fit, main=var)
+  dev.off()
+  
+  # 2_path_plot
+  pic_nm = paste0("2_path_plot_", var, ".png")
+  full_path = file.path(output_folder, pic_nm)
+  png(full_path, width = 800, height = 600)
+  CreatePathPlot(fit, main = paste0(var, " changes with time: K=",length(fit$lambda)), 
+                 pch = 4, xlab="Date", ylab=var, xaxt = "n")
+  # Customize x-ticks for the `2_path_plot`
+  original_x_ticks <- axTicks(1)
+  formatted_ticks = custom_xticks(full_time_grid, original_x_ticks)
+  axis(1, at = original_x_ticks, labels = formatted_ticks) 
+  # customize legends
+  id_map = unique(regional_trends$Region)
+  unique_ids <- unique(fpca_obj$id)
+  legend("topright", legend = id_map[unique_ids], 
+         col = 1:length(unique_ids), lty = 1:length(unique_ids))
+  grid()
+  dev.off()
+  
+  # 3_funcbox_plot
+  pic_nm = paste0("3_funcbox_plot_", var, ".png")
+  full_path = file.path(output_folder, pic_nm)
+  png(full_path, width = 800, height = 600)
+  CreateFuncBoxPlot(fit, xlab = 'Date', ylab = var, 
+                    main = paste0(var, ": functional boxplot (K=",length(fit$lambda), ")"), 
+                    optns = list(K =length(fit$lambda), variant='pointwise'),
+                    xaxt = "n"
+                    )
+  # Customize x-ticks for the `3_funcbox_plot` 
+  original_x_ticks <- axTicks(1)
+  formatted_ticks = custom_xticks(full_time_grid, original_x_ticks)
+  axis(1, at = original_x_ticks, labels = formatted_ticks) 
+  grid()
+  dev.off()
+  
+  }
+
+
+# test: perform PACE ##########
+var = variables_of_interest[5]
+fpca_obj <- create_fpca_obj(regional_trends, var)
+L3 <- MakeFPCAInputs(IDs = fpca_obj$id, tVec = fpca_obj$time, fpca_obj$y)
+optns <- list(dataType = 'Sparse', usergrid = TRUE, methodXi = 'CE')
+fit <- FPCA(L3$Ly, L3$Lt, optns = optns)
+png("custom_fpca_plot.png", width = 800, height = 600)
+plot(fit, main=var)
+dev.off()
+# test: save customized path plot .png ##########
+id_map = unique(regional_trends$Region)
+
+# Define the output file
+png("custom_path_plot.png", width = 800, height = 600)
+
+# Create the Path Plot
+CreatePathPlot(fit, main = paste0(var, " changes with time: K=",length(fit$lambda)), 
+                pch = 4, xlab="Date", ylab=var, xaxt = "n")
+original_x_ticks <- axTicks(1)
+grid()
+ 
+# Customize x-ticks
+full_time_grid = fpca_obj$full_time_grid
+formatted_ticks = custom_xticks(full_time_grid, original_x_ticks)
+axis(1, at = original_x_ticks, labels = formatted_ticks)
+
+# Add legend
+unique_ids <- unique(fpca_obj$id)
+legend("topright", legend = id_map[unique_ids], col = 1:length(unique_ids), lty = 1:length(unique_ids), 
+        title = "Path IDs")
+
+dev.off()
+
+# if (tail(original_x_ticks,1)[[1]] > max(full_time_grid$TimeIndex)){
+#   # Determine the maximum TimeIndex and corresponding Year and Season
+#   max_time_index <- max(full_time_grid$TimeIndex)
+#   last_year <- tail(full_time_grid$Year, 1)
+#   last_season <- tail(full_time_grid$Season, 1)
+#   
+#   # Generate new entries for full_time_grid
+#   new_entries <- data.frame(Year = integer(0), Season = character(0), TimeIndex = numeric(0))
+#   
+#   # Start from the next season
+#   seasons <- c("Q1", "Q2", "Q3", "Q4")
+#   season_idx <- match(last_season, seasons)
+#   year <- last_year
+#   
+#   for (time_idx in (max_time_index + 1):tail(original_x_ticks, 1)[[1]]) {
+#     # Determine the next season
+#     season_idx <- season_idx + 1
+#     if (season_idx > 4) {
+#       season_idx <- 1
+#       year <- year + 1
+#     }
+#     
+#     # Add the new entry
+#     new_entries <- rbind(new_entries, data.frame(
+#       Year = year,
+#       Season = seasons[season_idx],
+#       TimeIndex = time_idx
+#     ))
+#   }
+#   
+#   # Combine the old and new full_time_grid
+#   full_time_grid <- rbind(full_time_grid, new_entries)
+# }
+# 
+# formatted_ticks <- paste(full_time_grid$Year[original_x_ticks], 
+#                          full_time_grid$Season[original_x_ticks])
+# axis(1, at = original_x_ticks, labels = formatted_ticks)
+# 
+# 
+# # Add legend
+# unique_ids <- unique(fpca_obj$id)
+# legend("topright", legend = id_map[unique_ids], col = 1:length(unique_ids), lty = 1:length(unique_ids), 
+#        title = "Path IDs")
+# 
+# # Close the device to save the file
+# dev.off()
+# 
+# 
+# CreateOutliersPlot(fit, optns = list(K = 2, variant = 'KDE'))
+# CreateModeOfVarPlot(fit, k = 1, rainbowPlot = FALSE)
+# CreateFuncBoxPlot(fit, xlab = 'Time', ylab = 'Chemical Desity', 
+#                   optns = list(K =2, variant='pointwise'))
+
+
